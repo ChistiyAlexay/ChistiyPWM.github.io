@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChistiyPWM</title>
+<style>
+:root {
+  --bg: #111;
+  --text: #fff;
+  --accent: #ff8c00;
+  --card: #1b1b1b;
+}
+body.light {--bg:#f8f8f8;--text:#111;--card:#fff;}
+body.pink {--bg:#ffe6f0;--text:#5a0033;--accent:#ff4081;--card:#fff0f5;}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", sans-serif;
+  margin: 0;
+  padding: 0;
+  transition: background .3s, color .3s;
+}
+header {
+  text-align: center;
+  padding: 1rem;
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+.logo {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent);
+}
+.controls, .example-selector, .theme-selector {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .8rem;
+  margin: 1rem auto;
+  padding: .5rem;
+  max-width: 500px;
+}
+button, select, input[type="range"] {
+  font-size: 1rem;
+  border: none;
+  border-radius: 1rem;
+  padding: .6rem 1rem;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 0 6px rgba(0,0,0,0.2);
+}
+button:active {
+  transform: scale(.97);
+}
+canvas {
+  width: 100%;
+  height: auto;
+  max-width: 500px;
+  border-radius: 1rem;
+  display: block;
+  margin: auto;
+  background: var(--card);
+}
+.slider-group {
+  text-align: center;
+  margin: .5rem;
+}
+label {
+  display: block;
+  font-size: .9rem;
+  margin-bottom: .3rem;
+}
+.description {
+  text-align: center;
+  font-size: .9rem;
+  padding: 0 1rem;
+  line-height: 1.5;
+}
+@media (max-width:600px) {
+  header {font-size: 1.4rem;}
+  button, select, input[type="range"] {font-size: .9rem;}
+  canvas {max-width: 90vw;}
+}
+</style>
+</head>
+<body>
+<header><span class="logo">ChistiyPWM</span></header>
+<div class="theme-selector">
+  <button onclick="setTheme('dark')">Тёмная</button>
+  <button onclick="setTheme('light')">Светлая</button>
+  <button onclick="setTheme('pink')">Розовая</button>
+</div>
+<div class="description">
+  <p><b>PWM/ШИМ</b> — это способ регулировки мощности с помощью широтно-импульсной модуляции. Меняя <b>долготу импульса (duty cycle)</b> и <b>частоту (frequency)</b>, можно управлять яркостью светодиода, цветом RGB, скоростью мотора и ещё много чем.</p>
+</div>
+<div class="example-selector">
+  <button onclick="selectExample(1)">Пример 1</button>
+  <button onclick="selectExample(2)">Пример 2</button>
+</div>
+<div id="controls"></div>
+<canvas id="pwmCanvas" width="500" height="250"></canvas>
+<canvas id="deviceCanvas" width="500" height="250"></canvas>
+<script>
+let theme = getCookie("theme") || "dark";
+document.body.classList.add(theme);
+function setTheme(t){
+  document.body.className = t;
+  setCookie("theme", t, 365);
+}
+function setCookie(n,v,d){
+  let e = new Date(); e.setTime(e.getTime()+d*86400000);
+  document.cookie = n+"="+v+";expires="+e.toUTCString()+";path=/";
+}
+function getCookie(n){
+  let m = document.cookie.match("(^|;) ?"+n+"=([^;]*)(;|$)");
+  return m?m[2]:null;
+}
+
+let example = 1;
+const pwmCanvas = document.getElementById("pwmCanvas");
+const ctx = pwmCanvas.getContext("2d");
+const deviceCanvas = document.getElementById("deviceCanvas");
+const dctx = deviceCanvas.getContext("2d");
+
+// 🔹 Отдельные параметры для каждого примера
+const settings = {
+  1: { duty: 50, freq: 2 },
+  2: {
+    duty: [50, 50, 50],
+    freq: [2, 2, 2]
+  }
+};
+
+let startTime = performance.now();
+
+function selectExample(num){
+  example = num;
+  renderControls();
+}
+
+function renderControls(){
+  const el=document.getElementById("controls");
+  el.innerHTML="";
+
+  if(example===1){
+    const s = settings[1];
+    el.innerHTML=`
+      <div class="slider-group">
+        <label>Скважность / Duty Cycle: <span id="d1">${s.duty}%</span></label>
+        <input type="range" min="0" max="100" value="${s.duty}"
+          oninput="settings[1].duty=this.value;document.getElementById('d1').innerText=this.value+'%';">
+      </div>
+      <div class="slider-group">
+        <label>Частота / Frequency (Гц): <span id="f1">${s.freq}</span></label>
+        <input type="range" min="1" max="180" value="${s.freq}"
+          oninput="settings[1].freq=this.value;document.getElementById('f1').innerText=this.value;">
+      </div>`;
+  }
+
+  else if(example===2){
+    const s = settings[2];
+    const c=['R','G','B'];
+    el.innerHTML=c.map((x,i)=>`
+      <div class="slider-group">
+        <label>${x} Duty: <span id="d${i}">${s.duty[i]}%</span></label>
+        <input type="range" min="0" max="100" value="${s.duty[i]}"
+          oninput="settings[2].duty[${i}]=this.value;document.getElementById('d${i}').innerText=this.value+'%';">
+        <label>${x} Freq: <span id="f${i}">${s.freq[i]}</span> Гц</label>
+        <input type="range" min="1" max="180" value="${s.freq[i]}"
+          oninput="settings[2].freq[${i}]=this.value;document.getElementById('f${i}').innerText=this.value;">
+      </div>`).join('');
+  }
+}
+renderControls();
+
+function drawPWM(ctx, duty, freq){
+  ctx.clearRect(0,0,pwmCanvas.width,pwmCanvas.height);
+  const w=pwmCanvas.width, h=pwmCanvas.height;
+  ctx.strokeStyle=getComputedStyle(document.body).getPropertyValue('--accent');
+  ctx.lineWidth=2;
+  const period=w/(freq*0.3);
+  const high= h*0.3, low=h*0.7;
+  ctx.beginPath();
+  ctx.moveTo(0, low);
+  for(let x=0; x<w; x+=period){
+    ctx.lineTo(x, low);
+    ctx.lineTo(x, high);
+    ctx.lineTo(x+period*(duty/100), high);
+    ctx.lineTo(x+period*(duty/100), low);
+  }
+  ctx.stroke();
+}
+
+function drawDevice(dctx,time){
+  dctx.clearRect(0,0,deviceCanvas.width,deviceCanvas.height);
+  const cx=deviceCanvas.width/2, cy=deviceCanvas.height/2;
+
+  if(example===1){
+    const f=settings[1].freq, d=settings[1].duty/100;
+    const phase=(time/1000*f)%1;
+    const on=phase<d;
+    const bright=on?1:0.05;
+    const g=dctx.createRadialGradient(cx,cy,20,cx,cy,80);
+    g.addColorStop(0,`rgba(255,140,0,${bright})`);
+    g.addColorStop(1,"transparent");
+    dctx.fillStyle=g;
+    dctx.beginPath();dctx.arc(cx,cy,80,0,2*Math.PI);dctx.fill();
+  }
+
+  else if(example===2){
+    const s=settings[2];
+    for(let i=0;i<3;i++){
+      const f=s.freq[i], d=s.duty[i]/100;
+      const phase=(time/1000*f)%1;
+      const on=phase<d;
+      const bright=on?1:0.05;
+      const col=`rgba(${i==0?255:0},${i==1?255:0},${i==2?255:0},${bright})`;
+      const offx=cx+(i-1)*100;
+      const g=dctx.createRadialGradient(offx,cy,20,offx,cy,60);
+      g.addColorStop(0,col);g.addColorStop(1,"transparent");
+      dctx.fillStyle=g;
+      dctx.beginPath();dctx.arc(offx,cy,60,0,2*Math.PI);dctx.fill();
+    }
+  }
+}
+
+function animate(time){
+  if(example===1){
+    drawPWM(ctx, settings[1].duty, settings[1].freq);
+  } else if(example===2){
+    // можно показывать только сигнал одного канала (например R)
+    drawPWM(ctx, settings[2].duty[0], settings[2].freq[0]);
+  }
+  drawDevice(dctx,time-startTime);
+  requestAnimationFrame(animate);
+}
+animate(performance.now());
+</script>
+
+</body>
+</html>
